@@ -20,3 +20,6 @@ pub mod modes;
 pub mod vis;
 pub mod raster;
 pub mod synth;
+pub mod sync;
+pub mod autodetect;
+pub mod score;
