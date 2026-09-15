@@ -1,0 +1,9 @@
+[package]
+name = "sstv-auto"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "CTF-oriented automatic SSTV detector and decoder"
+rust-version = "1.85"
+
+[dependencies]
