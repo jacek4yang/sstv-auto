@@ -15,11 +15,15 @@
 //! * [`score`] — image plausibility metrics used to reject false positives.
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+pub mod audio;
+pub mod autodetect;
+pub mod backend;
 pub mod dsp;
 pub mod modes;
-pub mod vis;
+pub mod pipeline;
 pub mod raster;
-pub mod synth;
-pub mod sync;
-pub mod autodetect;
+pub mod report;
 pub mod score;
+pub mod sync;
+pub mod synth;
+pub mod vis;

@@ -226,6 +226,32 @@ fn rank_key(hypothesis: &Hypothesis) -> f64 {
     origin_bonus + hypothesis.timing_score
 }
 
+/// Whether `weaker` is describing the same transmission as `stronger`, but
+/// worse.
+///
+/// A mode whose line period divides another's will latch onto every second or
+/// third pulse of a transmission it is not present in, producing a long,
+/// regular chain and a mediocre-but-not-terrible decode. The tell is that the
+/// stronger hypothesis covers the same signal *better*: more of the
+/// transmission present, and a chain that accounts for more of the pulses it
+/// spans.
+///
+/// Without this, a Robot 36 recording reports a spurious Robot 72 image
+/// alongside the correct one.
+#[must_use]
+pub fn is_explained_by(weaker: &Candidate, stronger: &Candidate) -> bool {
+    // Only another *inferred* hypothesis can subsume this one; a VIS header is
+    // handled by its own authority rule.
+    if weaker.hypothesis.mode.mode == stronger.hypothesis.mode.mode {
+        return false;
+    }
+    // The stronger candidate must be clearly better on both counts.
+    let better_agreement = stronger.agreement > weaker.agreement - 0.05;
+    let better_coverage = stronger.coverage > weaker.coverage + 0.20;
+    let denser = stronger.hypothesis.matched_syncs > weaker.hypothesis.matched_syncs;
+    better_agreement && better_coverage && denser
+}
+
 /// Other modes this one cannot be distinguished from without a VIS header.
 ///
 /// [`SstvMode::Robot24`] and [`SstvMode::Robot36`] share a 150 ms radio line,
@@ -891,6 +917,51 @@ mod tests {
                 mode.name, acceptable
             );
         }
+    }
+
+    #[test]
+    fn a_submultiple_period_does_not_win_over_the_true_mode() {
+        // Regression: a Robot 36 recording previously also produced a Robot 72
+        // image, because a 300 ms period matches every second pulse of a
+        // 150 ms transmission.
+        let rate = 16_000;
+        let mode = describe(SstvMode::Robot36).expect("robot36");
+        let grid = crate::synth::test_grid(&mode);
+        let signal = crate::synth::render(&grid, &mode, rate, 0.0, None);
+        let (trajectory, analyzer) = trajectory_of(&signal, rate);
+        let analysis = analyze(&trajectory);
+
+        let mut candidates: Vec<Candidate> = analysis
+            .hypotheses
+            .iter()
+            .filter_map(|h| evaluate(h, &trajectory, &analyzer))
+            .collect();
+        candidates.sort_by(|a, b| b.score.total_cmp(&a.score));
+
+        let mut accepted: Vec<Candidate> = Vec::new();
+        for candidate in candidates {
+            if accepted
+                .iter()
+                .any(|better| is_explained_by(&candidate, better))
+            {
+                continue;
+            }
+            accepted.push(candidate);
+        }
+
+        // Robot 24 is an acceptable answer (it shares Robot 36's wire format),
+        // but a submultiple-period mode such as Robot 72 must not survive.
+        assert!(
+            accepted
+                .iter()
+                .all(|c| c.hypothesis.mode.mode == SstvMode::Robot36
+                    || c.hypothesis.mode.mode == SstvMode::Robot24),
+            "accepted {:?}",
+            accepted
+                .iter()
+                .map(|c| c.hypothesis.mode.name)
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]

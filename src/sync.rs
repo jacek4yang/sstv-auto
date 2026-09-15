@@ -247,6 +247,16 @@ pub struct Chain {
     pub clock_rate: f64,
     /// Mean frequency offset of the matched pulses, Hz.
     pub shift_hz: f64,
+    /// Fraction of the detected pulses between this chain's first and last
+    /// member that the chain actually matched, including pulses it skipped.
+    ///
+    /// Measured against every pulse in the range rather than only against the
+    /// ones the chain considered, because a chain can otherwise be perfectly
+    /// dense while describing the wrong mode: a 300 ms period matches every
+    /// *second* pulse of a 150 ms transmission, producing a long, regular
+    /// chain for a mode that is not present. Counting the skipped pulses is
+    /// what exposes that.
+    pub density: f64,
 }
 
 impl Chain {
@@ -342,12 +352,25 @@ fn refine(pulses: &[Pulse], indices: &[usize], nominal_period: f64) -> Chain {
     let mut shifts: Vec<f64> = indices.iter().map(|i| pulses[*i].hz - SYNC_HZ).collect();
     let shift_hz = median(&mut shifts);
 
+    // Density counts every detected pulse between the chain's first and last
+    // member, including those the chain skipped.
+    let first = indices[0];
+    let last = *indices.last().unwrap_or(&indices[0]);
+    let spanned = last.saturating_sub(first) + 1;
+    #[allow(clippy::cast_precision_loss)]
+    let density = if spanned > 0 {
+        indices.len() as f64 / spanned as f64
+    } else {
+        0.0
+    };
+
     Chain {
         indices: indices.to_vec(),
         span,
         timing_error,
         clock_rate,
         shift_hz,
+        density,
     }
 }
 
@@ -366,7 +389,11 @@ pub fn chain_score(chain: &Chain) -> f64 {
     // confidence comes from timing regularity instead.
     let length = ((chain.matched() as f64 - 2.0) / 14.0).clamp(0.0, 1.0);
     let regularity = (1.0 - chain.timing_error * 25.0).clamp(0.0, 1.0);
-    (0.65 * length + 0.35 * regularity).clamp(0.0, 1.0)
+    // Density separates a chain that accounts for every pulse it spans from
+    // one that matches a half or a quarter of them, which is what a period
+    // dividing the real one looks like.
+    let density = chain.density.clamp(0.0, 1.0);
+    (0.45 * length + 0.25 * regularity + 0.30 * density).clamp(0.0, 1.0)
 }
 
 /// Mean absolute deviation of pulse intervals in a span, in samples.
@@ -528,6 +555,46 @@ mod tests {
         assert!((p.centre() - 12.5).abs() < 1e-9);
         let empty = pulse(10.0, 0.0, 1200.0);
         assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn a_submultiple_period_is_penalised_by_density() {
+        // The false positive this guards against: a mode whose line period is
+        // an exact multiple of the real one matches every second pulse,
+        // producing a long, perfectly regular chain for a transmission that is
+        // not present.
+        let pulses: Vec<Pulse> = (0..60)
+            .map(|i| pulse(i as f64 * 100.0, 20.0, 1200.0))
+            .collect();
+
+        // The true period: every pulse matches.
+        let truth = chain(&pulses, 0, 100.0, 4.0);
+        assert_eq!(truth.matched(), 60);
+        assert!((truth.density - 1.0).abs() < 1e-9, "{}", truth.density);
+
+        // Double the period: the chain is just as regular but skips half.
+        let half = chain(&pulses, 0, 200.0, 4.0);
+        assert_eq!(half.matched(), 30);
+        assert!(
+            (half.density - 0.5).abs() < 0.02,
+            "density should expose the skipped pulses, got {}",
+            half.density
+        );
+        assert!(
+            chain_score(&truth) > chain_score(&half) + 0.1,
+            "the true period must outrank its multiple: {} vs {}",
+            chain_score(&truth),
+            chain_score(&half)
+        );
+
+        // Triple: a third of the pulses are matched.
+        let third = chain(&pulses, 0, 300.0, 4.0);
+        assert!(
+            (third.density - 1.0 / 3.0).abs() < 0.02,
+            "density {}",
+            third.density
+        );
+        assert!(chain_score(&truth) > chain_score(&third));
     }
 
     #[test]
