@@ -17,3 +17,4 @@
 
 pub mod dsp;
 pub mod modes;
+pub mod vis;
