@@ -31,8 +31,12 @@ jobs:
       - name: Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
+      # The end-to-end tests decode real-length SSTV transmissions, which is
+      # minutes of work in an unoptimised build. They run optimised here, as
+      # the tool ships, which keeps the gate near a couple of minutes instead
+      # of near forty. Correctness is unaffected: the same assertions run.
       - name: Tests
-        run: cargo test --all-features
+        run: cargo test --all-features --release
 
       - name: Release build
         run: cargo build --release
