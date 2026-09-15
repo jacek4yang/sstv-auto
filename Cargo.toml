@@ -1,9 +1,38 @@
 [package]
 name = "sstv-auto"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
-license = "MIT"
 description = "CTF-oriented automatic SSTV detector and decoder"
+license = "MIT"
+repository = "https://github.com/jacek4yang/sstv-auto"
 rust-version = "1.85"
 
 [dependencies]
+anyhow = "1.0"
+clap = { version = "4.5", features = ["derive"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+rustfft = "6.2"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+slowrx = "0.5.3"
+symphonia = { version = "0.5.4", features = ["aac", "adpcm", "alac", "flac", "isomp4", "mkv", "mp1", "mp2", "mp3", "ogg", "pcm", "vorbis", "wav", "aiff", "caf"] }
+
+[dev-dependencies]
+# Used by the integration tests to write synthetic SSTV fixtures as WAV.
+hound = "3.5"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"
+panic = "deny"
