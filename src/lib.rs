@@ -18,3 +18,5 @@
 pub mod dsp;
 pub mod modes;
 pub mod vis;
+pub mod raster;
+pub mod synth;
