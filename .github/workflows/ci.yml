@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Least privilege: the workflow only needs to read the repository.
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: fmt, clippy, test, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      # The end-to-end tests decode real-length SSTV transmissions, which is
+      # minutes of work in an unoptimised build. They run optimised here, as
+      # the tool ships, which keeps the gate near a couple of minutes instead
+      # of near forty. Correctness is unaffected: the same assertions run.
+      - name: Tests
+        run: cargo test --all-features --release
+
+      - name: Release build
+        run: cargo build --release
+
+      # The audio.wav acceptance fixture is not committed, so CI cannot run the
+      # real end-to-end decode. The synthetic round-trip tests in
+      # tests/end_to_end.rs cover the same pipeline and run here; the real
+      # fixture is verified locally, where the file exists.
+      - name: Confirm the acceptance fixture is absent from CI
+        run: |
+          if [ -f audio.wav ]; then
+            echo "::warning::audio.wav is present in CI; the acceptance test ran for real."
+          else
+            echo "audio.wav not committed, as intended; synthetic round trips cover the pipeline."
+          fi
